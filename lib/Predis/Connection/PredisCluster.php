@@ -13,10 +13,10 @@ namespace Predis\Connection;
 
 use Predis\Command\CommandInterface;
 use Predis\Distribution\DistributionStrategyInterface;
-use Predis\Helpers;
 use Predis\ClientException;
 use Predis\NotSupportedException;
 use Predis\Distribution\HashRing;
+use Predis\Cluster\PredisClusterSupport;
 
 /**
  * Abstraction for a cluster of aggregated connections to various Redis servers
@@ -29,6 +29,7 @@ class PredisCluster implements ClusterConnectionInterface, \IteratorAggregate, \
 {
     private $pool;
     private $distributor;
+    private $clusterSupport;
 
     /**
      * @param DistributionStrategyInterface $distributor Distribution strategy used by the cluster.
@@ -37,6 +38,7 @@ class PredisCluster implements ClusterConnectionInterface, \IteratorAggregate, \
     {
         $this->pool = array();
         $this->distributor = $distributor ?: new HashRing();
+        $this->clusterSupport = new PredisClusterSupport();
     }
 
     /**
@@ -126,10 +128,15 @@ class PredisCluster implements ClusterConnectionInterface, \IteratorAggregate, \
      */
     public function getConnection(CommandInterface $command)
     {
-        $cmdHash = $command->getHash($this->distributor);
+        if ($hash = $command->getHash() !== null) {
+            return $this->distributor->get($hash);
+        }
 
-        if (isset($cmdHash)) {
-            return $this->distributor->get($cmdHash);
+        if ($hash = $this->clusterSupport->getHash($this->distributor, $command)) {
+            $command->setHash($hash);
+            $node = $this->distributor->get($hash);
+
+            return $node;
         }
 
         $message = sprintf("Cannot send '%s' commands to a cluster of connections", $command->getId());
@@ -155,10 +162,10 @@ class PredisCluster implements ClusterConnectionInterface, \IteratorAggregate, \
      */
     public function getConnectionByKey($key)
     {
-        $hashablePart = Helpers::extractKeyTag($key);
-        $keyHash = $this->distributor->hash($hashablePart);
+        $hash = $this->clusterSupport->getKeyHash($this->distributor, $key);
+        $node = $this->distributor->get($hash);
 
-        return $this->distributor->get($keyHash);
+        return $node;
     }
 
     /**
