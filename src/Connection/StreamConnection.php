@@ -88,7 +88,10 @@ class StreamConnection extends AbstractConnection
 
         if (isset($parameters->persistent) && (bool) $parameters->persistent) {
             $flags |= STREAM_CLIENT_PERSISTENT;
-            $uri .= strpos($path = $parameters->path, '/') === 0 ? $path : "/$path";
+            // Temporarily remove the addition of the relative path which is now unsupported
+            // due to https://bugs.php.net/bug.php?id=74429&edit=3
+            // Vend production infrastructure does not require the path
+            //$uri .= strpos($path = $parameters->path, '/') === 0 ? $path : "/$path";
         }
 
         $resource = @stream_socket_client($uri, $errno, $errstr, (float) $parameters->timeout, $flags);
